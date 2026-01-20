@@ -1,8 +1,17 @@
-# MyTeam
+# Stelli
 
-We will add a project description here once we decide what to do!
+**Stelli** is an Android app that enables users to share their favorite study spots around campus. Users can add reviews for study spots, rank them against one another, and share their ranked lists with friends.
 
-- Members: Pengyu Nie (pengyunie), Bihui Jin (Bihui-Jin), ...
-- Links:
-  - [Team contract](./docs/team-contract.md)
-  - [Meeting minutes](./docs/meetings/)
+## Team Members
+
+- **Daniel Zhu** (danielzoo)
+- **Aayush Kapoor** (aayushkapoor1)
+- **Benjamin Chung** (BenjaminRChung)
+- **Alyssa Guo** (alyssasuiyiguo)
+- **Alex Hutchinson** (ahutchin)
+- **Sophie Wang** (sophiewangg)
+
+## Links
+
+- [Team Contract](./docs/team-contract.md)
+- [Meeting Minutes](./docs/meetings/)
