@@ -4,120 +4,157 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Balance
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Balance
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
+import com.stelli.app.data.AuthManager
+import com.stelli.app.ui.screens.*
 import com.stelli.app.ui.theme.StelliTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AuthManager.init(this)
         enableEdgeToEdge()
         setContent {
             StelliTheme {
-                MainScreen()
+                StelliApp()
             }
         }
     }
 }
 
-private enum class NavPage(val title: String) {
-    Home("Home"),
-    Rank("Rank"),
-    Search("Search"),
-    Profile("Profile")
+// ── Navigation routes ────────────────────────────────────────────
+
+private object Routes {
+    const val LOGIN = "login"
+    const val REGISTER = "register"
+    const val HOME = "home"
+    const val RANK = "rank"
+    const val DISCOVER = "discover"
+    const val PROFILE = "profile"
+    const val USER = "user/{username}"
+    fun user(username: String) = "user/$username"
 }
 
+private data class BottomNavItem(
+    val route: String,
+    val label: String,
+    val icon: ImageVector,
+)
+
+private val bottomNavItems = listOf(
+    BottomNavItem(Routes.HOME, "Home", Icons.Filled.Home),
+    BottomNavItem(Routes.RANK, "Rank", Icons.Filled.Balance),
+    BottomNavItem(Routes.DISCOVER, "Search", Icons.Filled.Search),
+    BottomNavItem(Routes.PROFILE, "Profile", Icons.Filled.Person),
+)
+
+// ── Root composable ──────────────────────────────────────────────
+
 @Composable
-fun MainScreen(modifier: Modifier = Modifier) {
-    var selectedIndex by rememberSaveable { mutableIntStateOf(0) }
-    val pages = NavPage.entries
-    val currentPage = pages[selectedIndex]
+fun StelliApp() {
+    val navController = rememberNavController()
+    // TODO: Change to start on login page
+    val startDestination = Routes.HOME
+
+    // Check current route for showing bottom bar
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+    val showBottomBar = currentRoute in bottomNavItems.map { it.route }
 
     Scaffold(
-        modifier = modifier.fillMaxSize(),
-        topBar = {
-            Surface(
-                shadowElevation = 4.dp,
-                color = MaterialTheme.colorScheme.surfaceVariant
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(64.dp)
-                        .padding(horizontal = 16.dp),
-                    contentAlignment = Alignment.CenterStart
-                ) {
-                    Text(
-                        text = currentPage.title,
-                        style = MaterialTheme.typography.titleLarge
-                    )
+        modifier = Modifier.fillMaxSize(),
+        bottomBar = {
+            if (showBottomBar) {
+                NavigationBar {
+                    bottomNavItems.forEach { item ->
+                        NavigationBarItem(
+                            selected = currentRoute == item.route,
+                            onClick = {
+                                navController.navigate(item.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            },
+                            icon = { Icon(item.icon, contentDescription = item.label) },
+                            label = { Text(item.label) },
+                            colors = NavigationBarItemDefaults.colors(
+                                indicatorColor = MaterialTheme.colorScheme.surfaceVariant,
+                                selectedIconColor = MaterialTheme.colorScheme.onSurface,
+                                selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            ),
+                        )
+                    }
                 }
             }
         },
-        bottomBar = {
-            NavigationBar {
-                pages.forEachIndexed { index, page ->
-                    NavigationBarItem(
-                        selected = selectedIndex == index,
-                        onClick = { selectedIndex = index },
-                        icon = {
-                            Icon(
-                                imageVector = when (page) {
-                                    NavPage.Home -> Icons.Filled.Home
-                                    NavPage.Rank -> Icons.Filled.Balance
-                                    NavPage.Search -> Icons.Filled.Search
-                                    NavPage.Profile -> Icons.Filled.Person
-                                },
-                                contentDescription = page.title
-                            )
-                        },
-                        label = { Text(page.title.lowercase()) }
-                    )
-                }
-            }
-        }
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
+    ) { innerPadding ->
+        NavHost(
+            navController = navController,
+            startDestination = startDestination,
+            modifier = Modifier.padding(innerPadding),
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(text = "Welcome to the ${currentPage.title} page!")
+            // ── Auth screens ─────────────────────────────────────
+
+            composable(Routes.LOGIN) {
+                // TODO: Login screen
+                Text("Login Screen Placeholder")
+            }
+
+            composable(Routes.REGISTER) {
+                // TODO: Register screen
+                Text("Register Screen Placeholder")
+            }
+
+            // ── Main screens ─────────────────────────────────────
+
+            composable(Routes.HOME) {
+                HomeScreen()
+            }
+
+            composable(Routes.RANK) {
+                RankScreen()
+            }
+
+            composable(Routes.DISCOVER) {
+                // TODO: Search screen
+                Text("Search Screen Placeholder")
+            }
+
+            composable(Routes.PROFILE) {
+                // TODO: Profile screen
+                Text("Profile Screen Placeholder")
+            }
+
+            composable(Routes.USER) {
+                // TODO: User screen
+                Text("User Screen Placeholder")
             }
         }
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun MainScreenPreview() {
-    StelliTheme {
-        MainScreen()
     }
 }

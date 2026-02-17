@@ -1,6 +1,6 @@
 """Ranking routes: create/update rankings, get feed, pairwise matchups."""
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from app.store import store
