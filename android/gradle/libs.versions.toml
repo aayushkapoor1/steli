@@ -1,4 +1,4 @@
-# Version catalog for Stelli – see workshop: Gradle Scripts / libs.versions.toml
+# Version catalog for Steli – see workshop: Gradle Scripts / libs.versions.toml
 # Unifies version declarations for all dependencies.
 
 [versions]

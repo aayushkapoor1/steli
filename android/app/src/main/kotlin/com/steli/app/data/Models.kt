@@ -1,4 +1,4 @@
-package com.stelli.app.data
+package com.steli.app.data
 
 import com.google.gson.annotations.SerializedName
 

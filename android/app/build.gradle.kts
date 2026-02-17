@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "com.stelli.app"
+    namespace = "com.steli.app"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.stelli.app"
+        applicationId = "com.steli.app"
         minSdk = 24
         targetSdk = 35
         versionCode = 1

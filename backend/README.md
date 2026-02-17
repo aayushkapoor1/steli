@@ -1,6 +1,6 @@
-# Stelli Backend (Python)
+# Steli Backend (Python)
 
-FastAPI backend for the Stelli study spots app.
+FastAPI backend for the Steli study spots app.
 
 ## Setup
 

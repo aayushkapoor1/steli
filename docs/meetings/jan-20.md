@@ -5,4 +5,4 @@
 - Discussed conflict styles; each member shared their approach to handling conflict.
 - Agreed to use a democratic process to resolve tie-breakers.
 - Brainstormed team names and application ideas.
-- Selected **Stelli**, an app that allows users to rank their favorite study spots on campus.
+- Selected **Steli**, an app that allows users to rank their favorite study spots on campus.

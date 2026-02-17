@@ -1,4 +1,4 @@
-package com.stelli.app
+package com.steli.app
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -26,9 +26,9 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.stelli.app.data.AuthManager
-import com.stelli.app.ui.screens.*
-import com.stelli.app.ui.theme.StelliTheme
+import com.steli.app.data.AuthManager
+import com.steli.app.ui.screens.*
+import com.steli.app.ui.theme.SteliTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -36,8 +36,8 @@ class MainActivity : ComponentActivity() {
         AuthManager.init(this)
         enableEdgeToEdge()
         setContent {
-            StelliTheme {
-                StelliApp()
+            SteliTheme {
+                SteliApp()
             }
         }
     }
@@ -72,7 +72,7 @@ private val bottomNavItems = listOf(
 // ── Root composable ──────────────────────────────────────────────
 
 @Composable
-fun StelliApp() {
+fun SteliApp() {
     val navController = rememberNavController()
     // TODO: Change to start on login page
     val startDestination = Routes.HOME

@@ -1,3 +1,3 @@
-package com.stelli.app.ui.theme
+package com.steli.app.ui.theme
 
 // Add brand colors here if needed

@@ -1,6 +1,6 @@
-# Stelli
+# Steli
 
-**Stelli** is an Android app that enables users to share their favorite study spots around campus. Users can add reviews for study spots, rank them against one another, and share their ranked lists with friends.
+**Steli** is an Android app that enables users to share their favorite study spots around campus. Users can add reviews for study spots, rank them against one another, and share their ranked lists with friends.
 
 ## Project structure
 

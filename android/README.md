@@ -1,6 +1,6 @@
-# Stelli (Android)
+# Steli (Android)
 
-Android app for Stelli – follows the **Android Toolchain** workshop setup.
+Android app for Steli – follows the **Android Toolchain** workshop setup.
 
 ## Setup (workshop flow)
 

@@ -1,4 +1,4 @@
-package com.stelli.app.ui.screens
+package com.steli.app.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,7 +23,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import com.stelli.app.data.*
+import com.steli.app.data.*
 import kotlinx.coroutines.launch
 
 // Local model for a spot being ranked (before submission)
@@ -124,7 +124,7 @@ fun RankScreen() {
     LaunchedEffect(Unit) {
         try {
             val user = AuthManager.currentUser.value ?: return@LaunchedEffect
-            val rankings = stelliApi.getUserRankings(user.username)
+            val rankings = steliApi.getUserRankings(user.username)
             val loaded = rankings.map {
                 LocalRankedSpot(
                     spotName = it.spot.name,
@@ -145,7 +145,7 @@ fun RankScreen() {
             saving = true
             try {
                 val normalized = scoresFromRankOrder(spots).sortedByDescending { it.score }
-                stelliApi.setRankings(
+                steliApi.setRankings(
                     SetRankingsRequest(
                         rankings = normalized.map {
                             RankedItem(spotName = it.spotName, score = it.score, notes = it.notes, photoUrl = it.photoUrl)
@@ -646,7 +646,7 @@ private fun AddSpotForm(
     // Fetch all known spots for autocomplete suggestions
     var allSpots by remember { mutableStateOf<List<StudySpot>>(emptyList()) }
     LaunchedEffect(Unit) {
-        try { allSpots = stelliApi.getSpots() } catch (_: Exception) { }
+        try { allSpots = steliApi.getSpots() } catch (_: Exception) { }
     }
 
     Column(

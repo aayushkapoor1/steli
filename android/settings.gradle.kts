@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Stelli"
+rootProject.name = "Steli"
 include(":app")

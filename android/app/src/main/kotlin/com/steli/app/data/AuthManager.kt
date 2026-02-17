@@ -1,4 +1,4 @@
-package com.stelli.app.data
+package com.steli.app.data
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * Manages authentication state and token persistence via SharedPreferences.
  */
 object AuthManager {
-    private const val PREFS_NAME = "stelli_auth"
+    private const val PREFS_NAME = "steli_auth"
     private const val KEY_TOKEN = "token"
     private const val KEY_USER_ID = "user_id"
     private const val KEY_USERNAME = "username"
