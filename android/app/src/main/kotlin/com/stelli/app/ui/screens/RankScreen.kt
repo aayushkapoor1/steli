@@ -2,6 +2,7 @@ package com.stelli.app.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
@@ -10,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -73,6 +75,7 @@ fun RankScreen() {
     var loading by remember { mutableStateOf(true) }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var editingSpot by remember { mutableStateOf<LocalRankedSpot?>(null) }
     val scope = rememberCoroutineScope()
 
     /*
@@ -251,12 +254,53 @@ fun RankScreen() {
                                     saveRankings(updated)
                                 }
                             },
+                            onEdit = { spotToEdit ->
+                                editingSpot = spotToEdit
+                            },
                         )
                     }
                     if (error != null) {
                         Snackbar(
                             modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
                         ) { Text(error!!) }
+                    }
+                    editingSpot?.let { spot ->
+                        EditRankDialog(
+                            spot = spot,
+                            onConfirm = { updated ->
+                                // Remove the old instance of this spot
+                                val withoutOld = rankedSpots.toMutableList().apply {
+                                    remove(spot)
+                                }
+                                rankedSpots = withoutOld
+                                editingSpot = null
+
+                                // Treat the updated spot as if it were newly added,
+                                // using the same rating-first + pairwise comparison flow.
+                                val rating = updated.rating
+                                val spotWithRating = when (rating) {
+                                    "good" -> updated.copy(score = SCORE_GOOD_MID)
+                                    "okay" -> updated.copy(score = SCORE_OKAY_MID)
+                                    "bad" -> updated.copy(score = SCORE_BAD_MID)
+                                    else -> updated.copy(score = SCORE_OKAY_MID)
+                                }
+
+                                val indices = sameRangeIndices(rating)
+                                if (indices.isEmpty()) {
+                                    // No existing items in this range: insert directly at the start index
+                                    insertAtIndex(spotWithRating, startIndexForRating(rating))
+                                } else {
+                                    // Reuse the existing pairwise comparison flow
+                                    state = RankState.Comparing(
+                                        newSpot = spotWithRating,
+                                        sameRangeIndices = indices,
+                                        low = 0,
+                                        high = indices.size,
+                                    )
+                                }
+                            },
+                            onDismiss = { editingSpot = null },
+                        )
                     }
                 }
 
@@ -377,10 +421,128 @@ private fun EmptyRankingsView() {
 }
 
 @Composable
+private fun EditRankDialog(
+    spot: LocalRankedSpot,
+    onConfirm: (LocalRankedSpot) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var notes by remember(spot) { mutableStateOf(spot.notes) }
+    var selectedRating by remember(spot) { mutableStateOf(spot.rating) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Edit ranking",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+            )
+        },
+        text = {
+            Column {
+                Text(
+                    text = spot.spotName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(16.dp))
+
+                Text(
+                    text = "How was it overall?",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    RatingOptionChip(
+                        label = "Good",
+                        isSelected = selectedRating == "good",
+                        color = SCORE_COLOR_GOOD,
+                        onClick = { selectedRating = "good" },
+                    )
+                    RatingOptionChip(
+                        label = "Okay",
+                        isSelected = selectedRating == "okay",
+                        color = SCORE_COLOR_OKAY,
+                        onClick = { selectedRating = "okay" },
+                    )
+                    RatingOptionChip(
+                        label = "Bad",
+                        isSelected = selectedRating == "bad",
+                        color = SCORE_COLOR_BAD,
+                        onClick = { selectedRating = "bad" },
+                    )
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    label = { Text("Notes") },
+                    minLines = 2,
+                    maxLines = 4,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val updated = spot.copy(
+                        notes = notes.trim(),
+                        rating = selectedRating,
+                    )
+                    onConfirm(updated)
+                },
+            ) {
+                Text("Save and Re-rank")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+@Composable
+private fun RatingOptionChip(
+    label: String,
+    isSelected: Boolean,
+    color: Color,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(50),
+        color = if (isSelected) color.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        tonalElevation = if (isSelected) 2.dp else 0.dp,
+        border = if (isSelected) {
+            BorderStroke(1.dp, color)
+        } else {
+            BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+        },
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            style = MaterialTheme.typography.labelLarge,
+            color = if (isSelected) color else MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+@Composable
 private fun RankedListView(
     spots: List<LocalRankedSpot>,
     saving: Boolean,
     onDelete: (LocalRankedSpot) -> Unit,
+    onEdit: (LocalRankedSpot) -> Unit,
 ) {
     if (saving) {
         LinearProgressIndicator(
@@ -448,12 +610,21 @@ private fun RankedListView(
                         }
                     }
 
-                    IconButton(onClick = { onDelete(spot) }) {
-                        Icon(
-                            Icons.Filled.Delete,
-                            contentDescription = "Remove",
-                            tint = Color(0xFF8D6E63),
-                        )
+                    Row {
+                        IconButton(onClick = { onEdit(spot) }) {
+                            Icon(
+                                Icons.Filled.Edit,
+                                contentDescription = "Edit",
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                        IconButton(onClick = { onDelete(spot) }) {
+                            Icon(
+                                Icons.Filled.Delete,
+                                contentDescription = "Remove",
+                                tint = Color(0xFF8D6E63),
+                            )
+                        }
                     }
                 }
             }
