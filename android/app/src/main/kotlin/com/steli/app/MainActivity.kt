@@ -163,8 +163,15 @@ fun SteliApp() {
             }
 
             composable(Routes.PROFILE) {
-                // TODO: Profile screen
-                Text("Profile Screen Placeholder")
+                ProfileScreen(
+                    username = null,
+                    onNavigateToUser = { navController.navigate(Routes.user(it)) },
+                    onLogout = {
+                        navController.navigate(Routes.LOGIN) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    },
+                )
             }
 
             composable(Routes.USER) {
