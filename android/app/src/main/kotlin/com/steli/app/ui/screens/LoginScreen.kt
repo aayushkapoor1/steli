@@ -1,4 +1,4 @@
-package com.stelli.app.ui.screens
+package com.steli.app.ui.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
@@ -9,9 +9,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import com.stelli.app.data.AuthManager
-import com.stelli.app.data.LoginRequest
-import com.stelli.app.data.stelliApi
+import com.steli.app.data.AuthManager
+import com.steli.app.data.LoginRequest
+import com.steli.app.data.steliApi
 import kotlinx.coroutines.launch
 
 @Composable
@@ -91,7 +91,7 @@ fun LoginScreen(
                     loading = true
                     error = null
                     try {
-                        val response = stelliApi.login(LoginRequest(username.trim(), password))
+                        val response = steliApi.login(LoginRequest(username.trim(), password))
                         AuthManager.saveSession(response.token, response.user)
                         onLoginSuccess()
                     } catch (e: retrofit2.HttpException) {

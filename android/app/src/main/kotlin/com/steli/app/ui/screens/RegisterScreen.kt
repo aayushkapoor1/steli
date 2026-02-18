@@ -1,4 +1,4 @@
-package com.stelli.app.ui.screens
+package com.steli.app.ui.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
@@ -11,9 +11,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import com.stelli.app.data.AuthManager
-import com.stelli.app.data.RegisterRequest
-import com.stelli.app.data.stelliApi
+import com.steli.app.data.AuthManager
+import com.steli.app.data.RegisterRequest
+import com.steli.app.data.steliApi
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -139,7 +139,7 @@ fun RegisterScreen(
                         loading = true
                         error = null
                         try {
-                            val response = stelliApi.register(
+                            val response = steliApi.register(
                                 RegisterRequest(
                                     username = username.trim(),
                                     password = password,
