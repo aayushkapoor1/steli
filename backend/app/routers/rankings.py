@@ -1,6 +1,6 @@
 """Ranking routes: create/update rankings, get feed, pairwise matchups."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.store import store
@@ -34,7 +34,6 @@ def get_matchup(user=Depends(get_current_user)):
     """Get two random spots for pairwise comparison (Rank screen)."""
     result = store.get_matchup(user["id"])
     if result is None:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Not enough spots for a matchup")
     return result
 
@@ -43,6 +42,5 @@ def get_matchup(user=Depends(get_current_user)):
 def get_user_rankings(username: str, user=Depends(get_optional_user)):
     target = store.get_user_by_username(username)
     if target is None:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="User not found")
     return store.get_user_rankings(target["id"])

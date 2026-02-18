@@ -1,16 +1,25 @@
-"""Authentication dependencies for FastAPI routes."""
+"""Auth dependency for protected endpoints."""
 
-from fastapi import Depends, HTTPException, Header
-from typing import Optional
+from fastapi import HTTPException, Request
 
-
-def get_current_user():
-    """Get the current authenticated user. For now, returns a mock user."""
-    # TODO: Implement real authentication
-    return {"id": 1, "username": "alex_zhang"}
+from app.store import store
 
 
-def get_optional_user():
-    """Get the current user if authenticated, otherwise None."""
-    # TODO: Implement real authentication
-    return None
+def get_current_user(request: Request):
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    token = auth[7:]
+    user = store.get_user_by_token(token)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    return user
+
+
+def get_optional_user(request: Request):
+    """Returns the current user or None (no error if unauthenticated)."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return None
+    token = auth[7:]
+    return store.get_user_by_token(token)

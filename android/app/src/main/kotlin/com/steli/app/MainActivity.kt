@@ -74,8 +74,8 @@ private val bottomNavItems = listOf(
 @Composable
 fun SteliApp() {
     val navController = rememberNavController()
-    // TODO: Change to start on login page
-    val startDestination = Routes.HOME
+    // Always start on login; if already logged in, LoginScreen will navigate to HOME
+    val startDestination = Routes.LOGIN
 
     // Check current route for showing bottom bar
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -121,14 +121,30 @@ fun SteliApp() {
         ) {
             // ── Auth screens ─────────────────────────────────────
 
+            // ── Auth screens ─────────────────────────────────────
+
             composable(Routes.LOGIN) {
-                // TODO: Login screen
-                Text("Login Screen Placeholder")
+                LoginScreen(
+                    onNavigateToRegister = {
+                        navController.navigate(Routes.REGISTER)
+                    },
+                    onLoginSuccess = {
+                        navController.navigate(Routes.HOME) {
+                            popUpTo(Routes.LOGIN) { inclusive = true }
+                        }
+                    },
+                )
             }
 
             composable(Routes.REGISTER) {
-                // TODO: Register screen
-                Text("Register Screen Placeholder")
+                RegisterScreen(
+                    onNavigateBack = { navController.popBackStack() },
+                    onRegisterSuccess = {
+                        navController.navigate(Routes.HOME) {
+                            popUpTo(Routes.LOGIN) { inclusive = true }
+                        }
+                    },
+                )
             }
 
             // ── Main screens ─────────────────────────────────────
@@ -147,8 +163,15 @@ fun SteliApp() {
             }
 
             composable(Routes.PROFILE) {
-                // TODO: Profile screen
-                Text("Profile Screen Placeholder")
+                ProfileScreen(
+                    username = null,
+                    onNavigateToUser = { navController.navigate(Routes.user(it)) },
+                    onLogout = {
+                        navController.navigate(Routes.LOGIN) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    },
+                )
             }
 
             composable(Routes.USER) {
