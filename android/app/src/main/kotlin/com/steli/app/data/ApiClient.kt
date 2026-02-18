@@ -1,4 +1,4 @@
-package com.stelli.app.data
+package com.steli.app.data
 
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -34,9 +34,9 @@ private val retrofit = Retrofit.Builder()
     .addConverterFactory(GsonConverterFactory.create())
     .build()
 
-val stelliApi: StelliApi = retrofit.create(StelliApi::class.java)
+val steliApi: SteliApi = retrofit.create(SteliApi::class.java)
 
-interface StelliApi {
+interface SteliApi {
 
     // ── Auth ──────────────────────────────────────────────────────
 
