@@ -53,3 +53,5 @@ android/.gradle/
 android/local.properties
 *.apk
 *.aab
+
+backend/data/*

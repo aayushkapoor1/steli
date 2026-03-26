@@ -55,7 +55,8 @@ private fun scoreToBadgeColor(score: Double): Color = when {
 // Screen states. Flow: rate first (Good/Bad/Okay), then compare only within same range
 private sealed class RankState {
     data object Viewing : RankState()
-    data object Adding : RankState()
+    // Adding a spot (optionally with a prefilled spot name from navigation).
+    data class Adding(val initialSpotName: String = "") : RankState()
     // User just added a spot; ask Good/Bad/Okay first
     data class RatingFirst(val newSpot: LocalRankedSpot) : RankState()
     // Comparing new spot only to spots in same range (sameRangeIndices into rankedSpots)
@@ -173,8 +174,11 @@ private object ViewingHandler : RankState.Handler {
 private object AddingHandler : RankState.Handler {
     @Composable
     override fun Render(ctx: RankStateContext) {
+        val addingState = ctx.state as RankState.Adding
         AddSpotForm(
             existingNames = ctx.rankedSpots.map { it.spotName.lowercase() }.toSet(),
+            initialName = addingState.initialSpotName,
+            isRankingsLoading = ctx.loading,
             onSubmit = { newSpot ->
                 ctx.setState(RankState.RatingFirst(newSpot))
             },
@@ -293,9 +297,13 @@ private class ComparingHandler(private val s: RankState.Comparing) : RankState.H
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RankScreen() {
+fun RankScreen(prefillSpotName: String? = null) {
     var rankedSpots by remember { mutableStateOf<List<LocalRankedSpot>>(emptyList()) }
-    var state by remember { mutableStateOf<RankState>(RankState.Viewing) }
+    var state by remember(prefillSpotName) {
+        mutableStateOf<RankState>(
+            if (prefillSpotName.isNullOrBlank()) RankState.Viewing else RankState.Adding(prefillSpotName)
+        )
+    }
     var loading by remember { mutableStateOf(true) }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -460,7 +468,7 @@ fun RankScreen() {
         floatingActionButton = {
             if (state is RankState.Viewing && !loading) {
                 FloatingActionButton(
-                    onClick = { state = RankState.Adding },
+                    onClick = { state = RankState.Adding() },
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
                     shape = RoundedCornerShape(16.dp),
@@ -728,10 +736,12 @@ private fun RankedListView(
 @Composable
 private fun AddSpotForm(
     existingNames: Set<String>,
+    initialName: String = "",
+    isRankingsLoading: Boolean = false,
     onSubmit: (LocalRankedSpot) -> Unit,
     onCancel: () -> Unit,
 ) {
-    var name by remember { mutableStateOf("") }
+    var name by remember(initialName) { mutableStateOf(initialName) }
     var notes by remember { mutableStateOf("") }
     var photoUrl by remember { mutableStateOf("") }
     var nameError by remember { mutableStateOf<String?>(null) }
@@ -770,9 +780,14 @@ private fun AddSpotForm(
         )
 
         // Show matching existing spots
-        val suggestions = allSpots.filter {
-            name.isNotBlank() && it.name.lowercase().contains(name.lowercase()) &&
-                it.name.lowercase() !in existingNames
+        val trimmedNameLower = name.trim().lowercase()
+        val suggestions = allSpots.filter { spot ->
+            val spotNameLower = spot.name.lowercase()
+            // Don't show "Use" for the exact value that's already in the input.
+            trimmedNameLower.isNotBlank() &&
+                spotNameLower.contains(trimmedNameLower) &&
+                spotNameLower != trimmedNameLower &&
+                spotNameLower !in existingNames
         }.take(3)
         if (suggestions.isNotEmpty()) {
             Spacer(Modifier.height(4.dp))
@@ -869,11 +884,17 @@ private fun AddSpotForm(
                         creating = false
                     }
                 },
-                enabled = !creating,
+                enabled = !creating && !isRankingsLoading,
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(8.dp),
             ) {
-                Text(if (creating) "Creating..." else "Next")
+                Text(
+                    when {
+                        creating -> "Creating..."
+                        isRankingsLoading -> "Loading..."
+                        else -> "Next"
+                    },
+                )
             }
         }
     }

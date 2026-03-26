@@ -1,17 +1,18 @@
 package com.steli.app
 
 import android.os.Bundle
+import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -62,10 +63,12 @@ private object Routes {
     const val REGISTER = "register"
     const val HOME = "home"
     const val RANK = "rank"
+    const val RANK_WITH_SPOT = "rank?spotName={spotName}"
     const val DISCOVER = "discover"
     const val PROFILE = "profile"
     const val USER = "user/{username}"
     fun user(username: String) = "user/$username"
+    fun rankWithSpot(spotName: String) = "rank?spotName=${Uri.encode(spotName)}"
 }
 
 private data class BottomNavItem(
@@ -92,7 +95,8 @@ fun SteliApp() {
     // Check current route for showing bottom bar
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
-    val showBottomBar = currentRoute in bottomNavItems.map { it.route }
+    val currentBaseRoute = currentRoute?.substringBefore("?")
+    val showBottomBar = currentBaseRoute in bottomNavItems.map { it.route }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -107,7 +111,7 @@ fun SteliApp() {
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     bottomNavItems.forEach { item ->
-                        val selected = currentRoute == item.route
+                        val selected = currentBaseRoute == item.route
                         val selectedColor = MaterialTheme.colorScheme.onSurface
                         val unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant
                         val contentColor = if (selected) selectedColor else unselectedColor
@@ -193,10 +197,15 @@ fun SteliApp() {
                 RankScreen()
             }
 
+            composable(Routes.RANK_WITH_SPOT) { backStackEntry ->
+                val spotName = backStackEntry.arguments?.getString("spotName")
+                RankScreen(prefillSpotName = spotName)
+            }
+
             composable(Routes.DISCOVER) {
                 DiscoverScreen(
                     onAddSpot = {
-                        navController.navigate(Routes.RANK) {
+                        navController.navigate(Routes.rankWithSpot(it)) {
                             launchSingleTop = true
                         }
                     },
