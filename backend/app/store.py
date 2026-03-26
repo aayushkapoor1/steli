@@ -1,17 +1,27 @@
-"""In-memory data store. Replace with a real database later."""
+"""Filesystem-backed store with in-memory cache."""
 
+import json
+import os
 import random
 import secrets
+import threading
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import bcrypt
 
 
 class Store:
     def __init__(self):
+        self._lock = threading.RLock()
+        self._data_dir = Path(os.getenv("STELI_DATA_DIR", Path(__file__).resolve().parents[1] / "data"))
+        self._data_file = self._data_dir / "store.json"
+        self._schema_version = 1
+        self._session_ttl_seconds = int(os.getenv("STELI_SESSION_TTL_SECONDS", str(60 * 60 * 24)))
         self.users: dict[int, dict] = {}
         self.usernames: dict[str, int] = {}  # lowercase username -> user id
-        self.tokens: dict[str, int] = {}  # token -> user id
+        # token -> {"user_id": int, "expires_at": iso-string}
+        self.tokens: dict[str, dict] = {}
         self.follows: set[tuple[int, int]] = set()  # (follower_id, following_id)
         self.spots: dict[int, dict] = {}
         self.spot_names: dict[str, int] = {}  # lowercase name -> spot id
@@ -22,25 +32,134 @@ class Store:
         self._next_spot_id = 1
         self._next_ranking_id = 1
         self._next_feed_event_id = 1
+        self._load()
+
+    def _snapshot(self) -> dict:
+        return {
+            "schema_version": self._schema_version,
+            "users": self.users,
+            "usernames": self.usernames,
+            "tokens": self.tokens,
+            "follows": [list(pair) for pair in sorted(self.follows)],
+            "spots": self.spots,
+            "spot_names": self.spot_names,
+            "rankings": self.rankings,
+            "user_rankings": self.user_rankings,
+            "feed_events": self.feed_events,
+            "next_ids": {
+                "user": self._next_user_id,
+                "spot": self._next_spot_id,
+                "ranking": self._next_ranking_id,
+                "feed_event": self._next_feed_event_id,
+            },
+        }
+
+    def _persist(self):
+        self._data_dir.mkdir(parents=True, exist_ok=True)
+        tmp_path = self._data_file.with_suffix(".tmp")
+        with tmp_path.open("w", encoding="utf-8") as f:
+            json.dump(self._snapshot(), f, ensure_ascii=True, separators=(",", ":"))
+            f.flush()
+            os.fsync(f.fileno())
+        tmp_path.replace(self._data_file)
+
+    @staticmethod
+    def _to_int_keyed_dict(raw: dict) -> dict:
+        return {int(k): v for k, v in raw.items()}
+
+    def _load(self):
+        if not self._data_file.exists():
+            return
+        with self._data_file.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        file_schema = int(data.get("schema_version", 0) or 0)
+        if file_schema == 0:
+            # v0 files were written before schema_version existed; treat as compatible with v1.
+            data["schema_version"] = self._schema_version
+        elif file_schema != self._schema_version:
+            raise RuntimeError(
+                f"Unsupported store schema_version={file_schema} (expected {self._schema_version}). "
+                "Delete the data file or implement a migration."
+            )
+
+        self.users = self._to_int_keyed_dict(data.get("users", {}))
+        self.usernames = dict(data.get("usernames", {}))
+        raw_tokens = data.get("tokens", {})
+        # Backwards compat: older versions stored token -> user_id (int).
+        # Treat those tokens as re-issued at load-time.
+        now = datetime.now(timezone.utc)
+        tokens: dict[str, dict] = {}
+        for token, val in raw_tokens.items():
+            if isinstance(val, int):
+                tokens[token] = {
+                    "user_id": val,
+                    "expires_at": (now + timedelta(seconds=self._session_ttl_seconds)).isoformat(),
+                }
+            elif isinstance(val, dict):
+                tokens[token] = val
+            else:
+                # Unknown shape: drop it.
+                continue
+        self.tokens = tokens
+        self.follows = {tuple(pair) for pair in data.get("follows", [])}
+        self.spots = self._to_int_keyed_dict(data.get("spots", {}))
+        self.spot_names = dict(data.get("spot_names", {}))
+        self.rankings = self._to_int_keyed_dict(data.get("rankings", {}))
+        self.user_rankings = {
+            int(k): [int(v) for v in values]
+            for k, values in data.get("user_rankings", {}).items()
+        }
+        self.feed_events = list(data.get("feed_events", []))
+
+        next_ids = data.get("next_ids", {})
+        self._next_user_id = int(next_ids.get("user", max(self.users.keys(), default=0) + 1))
+        self._next_spot_id = int(next_ids.get("spot", max(self.spots.keys(), default=0) + 1))
+        self._next_ranking_id = int(next_ids.get("ranking", max(self.rankings.keys(), default=0) + 1))
+        self._next_feed_event_id = int(next_ids.get("feed_event", len(self.feed_events) + 1))
+
+        # Drop expired sessions after loading.
+        self._cleanup_expired_tokens()
+
+    def _cleanup_expired_tokens(self):
+        now = datetime.now(timezone.utc)
+        expired = []
+        for token, meta in self.tokens.items():
+            expires_at = meta.get("expires_at")
+            if not expires_at:
+                expired.append(token)
+                continue
+            try:
+                exp_dt = datetime.fromisoformat(expires_at)
+                if exp_dt.tzinfo is None:
+                    exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+                if exp_dt <= now:
+                    expired.append(token)
+            except Exception:
+                expired.append(token)
+        for token in expired:
+            self.tokens.pop(token, None)
 
     # ── Users ──────────────────────────────────────────────────────
 
     def create_user(self, username: str, password: str, first_name: str, last_name: str):
-        if username.lower() in self.usernames:
-            return None
-        uid = self._next_user_id
-        self._next_user_id += 1
-        user = {
-            "id": uid,
-            "username": username,
-            "password_hash": bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode(),
-            "first_name": first_name,
-            "last_name": last_name,
-        }
-        self.users[uid] = user
-        self.usernames[username.lower()] = uid
-        self.user_rankings[uid] = []
-        return user
+        with self._lock:
+            if username.lower() in self.usernames:
+                return None
+            uid = self._next_user_id
+            self._next_user_id += 1
+            user = {
+                "id": uid,
+                "username": username,
+                "password_hash": bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode(),
+                "first_name": first_name,
+                "last_name": last_name,
+            }
+            self.users[uid] = user
+            self.usernames[username.lower()] = uid
+            self.user_rankings[uid] = []
+            self._persist()
+            return user
 
     def verify_user(self, username: str, password: str):
         uid = self.usernames.get(username.lower())
@@ -57,32 +176,68 @@ class Store:
 
     def search_users(self, query: str):
         q = query.lower()
-        return [u for u in self.users.values() if q in u["username"].lower()]
+        # Simple in-memory search for autocomplete.
+        # Matches username and name parts (first/last) case-insensitively.
+        return [
+            u
+            for u in self.users.values()
+            if q in u["username"].lower()
+            or q in u["first_name"].lower()
+            or q in u["last_name"].lower()
+            or q in f"{u['first_name']} {u['last_name']}".lower()
+        ]
 
     # ── Tokens ─────────────────────────────────────────────────────
 
     def create_token(self, user_id: int) -> str:
-        token = secrets.token_hex(32)
-        self.tokens[token] = user_id
-        return token
+        with self._lock:
+            token = secrets.token_hex(32)
+            expires_at = (datetime.now(timezone.utc) + timedelta(seconds=self._session_ttl_seconds)).isoformat()
+            self.tokens[token] = {"user_id": user_id, "expires_at": expires_at}
+            self._persist()
+            return token
 
     def get_user_by_token(self, token: str):
-        uid = self.tokens.get(token)
-        return self.users.get(uid) if uid else None
+        with self._lock:
+            meta = self.tokens.get(token)
+            if not meta:
+                return None
+            try:
+                exp = meta.get("expires_at")
+                if exp:
+                    exp_dt = datetime.fromisoformat(exp)
+                    if exp_dt.tzinfo is None:
+                        exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+                    if exp_dt <= datetime.now(timezone.utc):
+                        self.tokens.pop(token, None)
+                        self._persist()
+                        return None
+            except Exception:
+                self.tokens.pop(token, None)
+                self._persist()
+                return None
+            uid = meta.get("user_id")
+            return self.users.get(uid) if uid else None
 
     def delete_token(self, token: str):
-        self.tokens.pop(token, None)
+        with self._lock:
+            self.tokens.pop(token, None)
+            self._persist()
 
     # ── Follows ────────────────────────────────────────────────────
 
     def follow(self, follower_id: int, following_id: int) -> bool:
-        if follower_id == following_id:
-            return False
-        self.follows.add((follower_id, following_id))
-        return True
+        with self._lock:
+            if follower_id == following_id:
+                return False
+            self.follows.add((follower_id, following_id))
+            self._persist()
+            return True
 
     def unfollow(self, follower_id: int, following_id: int):
-        self.follows.discard((follower_id, following_id))
+        with self._lock:
+            self.follows.discard((follower_id, following_id))
+            self._persist()
 
     def is_following(self, follower_id: int, following_id: int) -> bool:
         return (follower_id, following_id) in self.follows
@@ -101,20 +256,27 @@ class Store:
 
     # ── Spots ──────────────────────────────────────────────────────
 
-    def get_or_create_spot(self, name: str, category: str = ""):
+    def _get_or_create_spot_unlocked(self, name: str, category: str = ""):
+        """Must be called with `self._lock` held."""
         key = name.lower().strip()
         if key in self.spot_names:
             spot = self.spots[self.spot_names[key]]
             # Update category if provided and spot doesn't have one yet
             if category and not spot.get("category"):
                 spot["category"] = category
+                self._persist()
             return spot
         sid = self._next_spot_id
         self._next_spot_id += 1
         spot = {"id": sid, "name": name.strip(), "category": category}
         self.spots[sid] = spot
         self.spot_names[key] = sid
+        self._persist()
         return spot
+
+    def get_or_create_spot(self, name: str, category: str = ""):
+        with self._lock:
+            return self._get_or_create_spot_unlocked(name, category)
 
     def list_spots(self):
         return list(self.spots.values())
@@ -162,69 +324,70 @@ class Store:
         FEED EVENT STUFF NOT ADDED IN PROJECT YET
         Only adds a feed event when the user adds at least one *new* spot (not when they just reorder or scores change).
         """
-        # Remember which spots they had before (normalized names for comparison)
-        old_spot_names = set()
-        for rid in self.user_rankings.get(user_id, []):
-            r = self.rankings.get(rid)
-            if r:
-                s = self.spots.get(r["spot_id"])
-                if s:
-                    old_spot_names.add(s["name"].lower().strip())
+        with self._lock:
+            # Remember which spots they had before (normalized names for comparison)
+            old_spot_names = set()
+            for rid in self.user_rankings.get(user_id, []):
+                r = self.rankings.get(rid)
+                if r:
+                    s = self.spots.get(r["spot_id"])
+                    if s:
+                        old_spot_names.add(s["name"].lower().strip())
 
-        # Remove old rankings for this user
-        for rid in self.user_rankings.get(user_id, []):
-            self.rankings.pop(rid, None)
-        self.user_rankings[user_id] = []
+            # Remove old rankings for this user
+            for rid in self.user_rankings.get(user_id, []):
+                self.rankings.pop(rid, None)
+            self.user_rankings[user_id] = []
 
-        now_iso = datetime.now(timezone.utc).isoformat()
+            now_iso = datetime.now(timezone.utc).isoformat()
 
-        for i, item in enumerate(ranked_items):
-            spot = self.get_or_create_spot(item["spot_name"], item.get("category", ""))
-            rid = self._next_ranking_id
-            self._next_ranking_id += 1
-            score = item.get("score", 5.0)
-            ranking = {
-                "id": rid,
-                "user_id": user_id,
-                "spot_id": spot["id"],
-                "rank": i + 1,
-                "score": score,
-                "tier": self.score_to_tier(score),
-                "notes": item.get("notes", ""),
-                "photo_url": item.get("photo_url", ""),
-                "created_at": item.get("created_at", now_iso),
-            }
-            self.rankings[rid] = ranking
-            self.user_rankings[user_id].append(rid)
+            for i, item in enumerate(ranked_items):
+                spot = self._get_or_create_spot_unlocked(item["spot_name"], item.get("category", ""))
+                rid = self._next_ranking_id
+                self._next_ranking_id += 1
+                score = item.get("score", 5.0)
+                ranking = {
+                    "id": rid,
+                    "user_id": user_id,
+                    "spot_id": spot["id"],
+                    "rank": i + 1,
+                    "score": score,
+                    "tier": self.score_to_tier(score),
+                    "notes": item.get("notes", ""),
+                    "photo_url": item.get("photo_url", ""),
+                    "created_at": item.get("created_at", now_iso),
+                }
+                self.rankings[rid] = ranking
+                self.user_rankings[user_id].append(rid)
 
-        ####### Not in project yet ######
-        # Feed event only when they explicitly added at least one new spot (not reorder/score-only changes)
-        if ranked_items:
-            new_spot_names = {item["spot_name"].lower().strip() for item in ranked_items}
-            added_names = new_spot_names - old_spot_names
-            if added_names:
-                # Find the first newly added spot in their list for the feed card
-                for item in ranked_items:
-                    if item["spot_name"].lower().strip() in added_names:
-                        spot = self.get_or_create_spot(item["spot_name"], item.get("category", ""))
-                        score = item.get("score", 5.0)
-                        event_id = self._next_feed_event_id
-                        self._next_feed_event_id += 1
-                        self.feed_events.append({
-                            "id": event_id,
-                            "user_id": user_id,
-                            "created_at": now_iso,
-                            "kind": "new",
-                            "spot": {"id": spot["id"], "name": spot["name"], "category": spot.get("category", "")},
-                            "score": score,
-                            "tier": self.score_to_tier(score),
-                        })
-                        break
-                if len(self.feed_events) > 500:
-                    self.feed_events = self.feed_events[-500:]
-        ####### End of not in project yet ######
-
-        return self.get_user_rankings(user_id)
+            ####### Not in project yet ######
+            # Feed event only when they explicitly added at least one new spot (not reorder/score-only changes)
+            if ranked_items:
+                new_spot_names = {item["spot_name"].lower().strip() for item in ranked_items}
+                added_names = new_spot_names - old_spot_names
+                if added_names:
+                    # Find the first newly added spot in their list for the feed card
+                    for item in ranked_items:
+                        if item["spot_name"].lower().strip() in added_names:
+                            spot = self._get_or_create_spot_unlocked(item["spot_name"], item.get("category", ""))
+                            score = item.get("score", 5.0)
+                            event_id = self._next_feed_event_id
+                            self._next_feed_event_id += 1
+                            self.feed_events.append({
+                                "id": event_id,
+                                "user_id": user_id,
+                                "created_at": now_iso,
+                                "kind": "new",
+                                "spot": {"id": spot["id"], "name": spot["name"], "category": spot.get("category", "")},
+                                "score": score,
+                                "tier": self.score_to_tier(score),
+                            })
+                            break
+                    if len(self.feed_events) > 500:
+                        self.feed_events = self.feed_events[-500:]
+            ####### End of not in project yet ######
+            self._persist()
+            return self.get_user_rankings(user_id)
 
     def get_user_rankings(self, user_id: int):
         results = []
@@ -234,6 +397,10 @@ class Store:
             out = {**r, "spot": spot}
             out["rating"] = self.score_to_rating(r["score"])
             results.append(out)
+        # Requirement: profile ranked list ordered by score (desc).
+        results.sort(key=lambda x: x["score"], reverse=True)
+        for i, item in enumerate(results, start=1):
+            item["rank"] = i
         return results
 
     def ranked_count(self, user_id: int) -> int:
@@ -267,15 +434,45 @@ class Store:
     def get_feed(self, user_id: int, limit: int = 20):
         """Feed from users you follow: sorted by recency (newest first)."""
         following_ids = {tid for fid, tid in self.follows if fid == user_id}
-        events = [e for e in self.feed_events if e["user_id"] in following_ids]
+        events = [
+            e
+            for e in self.feed_events
+            if e["user_id"] in following_ids and e.get("kind", "new") == "new"
+        ]
         events.sort(key=lambda x: x["created_at"], reverse=True)
         return self._feed_events_to_items(events[:limit])
 
     def get_recent_rankings(self, limit: int = 20):
         """Recent feed: sorted by recency (newest first). One entry per new ranking action."""
-        events = sorted(self.feed_events, key=lambda x: x["created_at"], reverse=True)[:limit]
+        events = [e for e in self.feed_events if e.get("kind", "new") == "new"]
+        events = sorted(events, key=lambda x: x["created_at"], reverse=True)[:limit]
         return self._feed_events_to_items(events)
     ####### End of not in project yet ######
+
+    def record_pairwise_result(self, user_id: int, winner_spot_name: str, loser_spot_name: str):
+        """Record a pairwise comparison outcome as a feed event (does not change rankings)."""
+        with self._lock:
+            winner = self._get_or_create_spot_unlocked(winner_spot_name, "")
+            loser = self._get_or_create_spot_unlocked(loser_spot_name, "")
+            now_iso = datetime.now(timezone.utc).isoformat()
+            event_id = self._next_feed_event_id
+            self._next_feed_event_id += 1
+            self.feed_events.append(
+                {
+                    "id": event_id,
+                    "user_id": user_id,
+                    "created_at": now_iso,
+                    "kind": "compare",
+                    "spot": {"id": winner["id"], "name": winner["name"], "category": winner.get("category", "")},
+                    "score": 0.0,
+                    "tier": "—",
+                    "meta": {"loser": {"id": loser["id"], "name": loser["name"]}},
+                }
+            )
+            if len(self.feed_events) > 500:
+                self.feed_events = self.feed_events[-500:]
+            self._persist()
+            return {"winner": winner, "loser": loser}
 
     # ── Pairwise Matchups (Rank screen) ────────────────────────────
 
@@ -294,6 +491,8 @@ store = Store()
 def _seed():
     """Populate the store with data matching the app mockups."""
 
+    if store.users:
+        return
     now = datetime.now(timezone.utc)
 
     # ── Study Spots (pre-create with categories) ───────────────────
