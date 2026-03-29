@@ -1,5 +1,6 @@
 package com.steli.app.ui.screens
 
+import android.util.Base64
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.BorderStroke
@@ -7,6 +8,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
@@ -18,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.graphics.Color
@@ -25,6 +29,8 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.steli.app.data.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 // Local model for a spot being ranked (before submission)
 private data class LocalRankedSpot(
@@ -744,10 +750,40 @@ private fun AddSpotForm(
     var name by remember(initialName) { mutableStateOf(initialName) }
     var notes by remember { mutableStateOf("") }
     var photoUrl by remember { mutableStateOf("") }
+    var photoError by remember { mutableStateOf<String?>(null) }
     var nameError by remember { mutableStateOf<String?>(null) }
     var creating by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    // The backend only stores a `photo_url` string. We still let the user upload from device
+    // by converting the chosen image to a base64 data-URL.
+    val pickImageLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        photoError = null
+        scope.launch {
+            try {
+                val bytes = withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        input.readBytes()
+                    } ?: ByteArray(0)
+                }
+                if (bytes.isEmpty()) {
+                    photoError = "Could not read selected image."
+                    return@launch
+                }
+
+                val mime = context.contentResolver.getType(uri) ?: "image/jpeg"
+                val base64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                photoUrl = "data:$mime;base64,$base64"
+            } catch (_: Exception) {
+                photoError = "Failed to load image. Please try another one."
+            }
+        }
+    }
 
     // Fetch all known spots for autocomplete suggestions
     var allSpots by remember { mutableStateOf<List<StudySpot>>(emptyList()) }
@@ -815,17 +851,42 @@ private fun AddSpotForm(
 
         Spacer(Modifier.height(12.dp))
 
-        OutlinedTextField(
-            value = photoUrl,
-            onValueChange = { photoUrl = it },
-            placeholder = { Text("Photo URL (optional)") },
-            singleLine = true,
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp),
-        )
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            OutlinedButton(
+                onClick = { pickImageLauncher.launch("image/*") },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(8.dp),
+                enabled = !creating && !isRankingsLoading,
+            ) {
+                Text("Upload photo")
+            }
+
+            if (photoUrl.isNotBlank()) {
+                OutlinedButton(
+                    onClick = { photoUrl = "" },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(8.dp),
+                    enabled = !creating && !isRankingsLoading,
+                ) {
+                    Text("Remove")
+                }
+            }
+        }
+
+        if (photoError != null) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = photoError!!,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
 
         if (photoUrl.isNotBlank()) {
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(10.dp))
             AsyncImage(
                 model = photoUrl,
                 contentDescription = "Preview",
