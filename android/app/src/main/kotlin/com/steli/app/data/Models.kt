@@ -28,10 +28,26 @@ data class UserPublic(
     val username: String,
     @SerializedName("first_name") val firstName: String,
     @SerializedName("last_name") val lastName: String,
+    @SerializedName("profile_photo_url") val profilePhotoUrl: String = "",
     @SerializedName("followers_count") val followersCount: Int = 0,
     @SerializedName("following_count") val followingCount: Int = 0,
     @SerializedName("ranked_count") val rankedCount: Int = 0,
     @SerializedName("is_following") val isFollowing: Boolean = false,
+    @SerializedName("is_public") val isPublic: Boolean = false,
+    @SerializedName("follow_status") val followStatus: String = "none",
+    @SerializedName("pending_requests_count") val pendingRequestsCount: Int = 0,
+)
+
+data class FollowResponse(
+    val status: String,
+)
+
+data class UpdatePrivacyRequest(
+    @SerializedName("is_public") val isPublic: Boolean,
+)
+
+data class UpdatePhotoRequest(
+    @SerializedName("photo_url") val photoUrl: String,
 )
 
 // ── Spots ─────────────────────────────────────────────────────────
@@ -95,6 +111,25 @@ data class FeedItem(
     val notes: String = "",
     @SerializedName("photo_url") val photoUrl: String = "",
     @SerializedName("created_at") val createdAt: String = "",
+    @SerializedName("likes_count") val likesCount: Int = 0,
+    @SerializedName("is_liked") val isLiked: Boolean = false,
+    @SerializedName("comments_count") val commentsCount: Int = 0,
+    val comments: List<FeedComment> = emptyList(),
+)
+
+data class FeedComment(
+    val id: Int,
+    val user: UserPublic,
+    val text: String,
+    @SerializedName("created_at") val createdAt: String = "",
+)
+
+data class LikeResponse(
+    val liked: Boolean,
+)
+
+data class AddCommentRequest(
+    val text: String,
 )
 
 data class MatchupResponse(

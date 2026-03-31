@@ -54,6 +54,7 @@ dependencies {
     implementation(libs.retrofit.converter.gson)
     implementation(libs.google.material)
     implementation(libs.coil.compose)
+    implementation("androidx.security:security-crypto:1.0.0")
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

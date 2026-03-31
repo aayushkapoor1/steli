@@ -60,6 +60,12 @@ interface SteliApi {
     @GET("api/users/{username}")
     suspend fun getUser(@Path("username") username: String): UserPublic
 
+    @PUT("api/users/me/photo")
+    suspend fun updateProfilePhoto(@Body request: UpdatePhotoRequest): UserPublic
+
+    @PUT("api/users/me/privacy")
+    suspend fun updatePrivacy(@Body request: UpdatePrivacyRequest): UserPublic
+
     @GET("api/users/{username}/followers")
     suspend fun getFollowers(@Path("username") username: String): List<UserPublic>
 
@@ -67,10 +73,19 @@ interface SteliApi {
     suspend fun getFollowing(@Path("username") username: String): List<UserPublic>
 
     @POST("api/users/{username}/follow")
-    suspend fun followUser(@Path("username") username: String): Response<Unit>
+    suspend fun followUser(@Path("username") username: String): FollowResponse
 
     @DELETE("api/users/{username}/follow")
     suspend fun unfollowUser(@Path("username") username: String): Response<Unit>
+
+    @GET("api/users/me/follow-requests")
+    suspend fun getFollowRequests(): List<UserPublic>
+
+    @POST("api/users/me/follow-requests/{username}/approve")
+    suspend fun approveFollowRequest(@Path("username") username: String): Response<Unit>
+
+    @DELETE("api/users/me/follow-requests/{username}/deny")
+    suspend fun denyFollowRequest(@Path("username") username: String): Response<Unit>
 
     // ── Spots ─────────────────────────────────────────────────────
 
@@ -99,4 +114,19 @@ interface SteliApi {
 
     @GET("api/rankings/user/{username}")
     suspend fun getUserRankings(@Path("username") username: String): List<RankedSpot>
+
+    @POST("api/rankings/feed/{eventId}/like")
+    suspend fun toggleLike(@Path("eventId") eventId: Int): LikeResponse
+
+    @DELETE("api/rankings/feed/{eventId}/like")
+    suspend fun unlike(@Path("eventId") eventId: Int): LikeResponse
+
+    @GET("api/rankings/feed/{eventId}/comments")
+    suspend fun getComments(@Path("eventId") eventId: Int): List<FeedComment>
+
+    @POST("api/rankings/feed/{eventId}/comments")
+    suspend fun addComment(
+        @Path("eventId") eventId: Int,
+        @Body request: AddCommentRequest,
+    ): FeedComment
 }

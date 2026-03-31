@@ -2,15 +2,18 @@ package com.steli.app.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKeys
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /*
- * Manages authentication state and token persistence via SharedPreferences.
+ * Manages authentication state and token persistence via EncryptedSharedPreferences.
  */
 object AuthManager {
-    private const val PREFS_NAME = "steli_auth"
+    private const val LEGACY_PREFS_NAME = "steli_auth"
+    private const val PREFS_NAME = "steli_auth_encrypted"
     private const val KEY_TOKEN = "token"
     private const val KEY_USER_ID = "user_id"
     private const val KEY_USERNAME = "username"
@@ -26,7 +29,17 @@ object AuthManager {
     val currentUser: StateFlow<UserPublic?> = _currentUser.asStateFlow()
 
     fun init(context: Context) {
-        prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
+        prefs = EncryptedSharedPreferences.create(
+            PREFS_NAME,
+            masterKeyAlias,
+            context,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+        )
+
+        migrateFromLegacyPrefs(context)
+
         val token = prefs.getString(KEY_TOKEN, null)
         if (token != null) {
             val user = UserPublic(
@@ -38,6 +51,22 @@ object AuthManager {
             _currentUser.value = user
             _isLoggedIn.value = true
         }
+    }
+
+    private fun migrateFromLegacyPrefs(context: Context) {
+        val legacy = context.getSharedPreferences(LEGACY_PREFS_NAME, Context.MODE_PRIVATE)
+        val legacyToken = legacy.getString(KEY_TOKEN, null) ?: return
+
+        if (prefs.getString(KEY_TOKEN, null) == null) {
+            prefs.edit()
+                .putString(KEY_TOKEN, legacyToken)
+                .putInt(KEY_USER_ID, legacy.getInt(KEY_USER_ID, 0))
+                .putString(KEY_USERNAME, legacy.getString(KEY_USERNAME, ""))
+                .putString(KEY_FIRST_NAME, legacy.getString(KEY_FIRST_NAME, ""))
+                .putString(KEY_LAST_NAME, legacy.getString(KEY_LAST_NAME, ""))
+                .apply()
+        }
+        legacy.edit().clear().apply()
     }
 
     fun getToken(): String? = prefs.getString(KEY_TOKEN, null)
