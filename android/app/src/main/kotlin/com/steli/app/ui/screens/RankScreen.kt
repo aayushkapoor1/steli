@@ -26,8 +26,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.steli.app.data.*
+import com.steli.app.ui.components.PhotoPreview
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -97,6 +97,11 @@ private data class RankStateContext(
     val setError: (String?) -> Unit,
     val editingSpot: LocalRankedSpot?,
     val setEditingSpot: (LocalRankedSpot?) -> Unit,
+    // When re-ranking an existing spot, stash the original so cancel can restore it.
+    val rerankOriginalSpot: LocalRankedSpot?,
+    val setRerankOriginalSpot: (LocalRankedSpot?) -> Unit,
+    val rerankOriginalIndex: Int?,
+    val setRerankOriginalIndex: (Int?) -> Unit,
     val scope: kotlinx.coroutines.CoroutineScope,
     val saveRankings: (List<LocalRankedSpot>) -> Unit,
     val insertAtIndex: (LocalRankedSpot, Int) -> Unit,
@@ -144,6 +149,11 @@ private object ViewingHandler : RankState.Handler {
                 EditRankDialog(
                     spot = spot,
                     onConfirm = { updated ->
+                        // Stash original so cancel can restore it.
+                        val originalIndex = ctx.rankedSpots.indexOf(spot).takeIf { it >= 0 }
+                        ctx.setRerankOriginalSpot(spot)
+                        ctx.setRerankOriginalIndex(originalIndex)
+
                         val withoutOld = ctx.rankedSpots.toMutableList().apply { remove(spot) }
                         ctx.setRankedSpots(withoutOld)
                         ctx.setEditingSpot(null)
@@ -274,7 +284,9 @@ private class ComparingHandler(private val s: RankState.Comparing) : RankState.H
             val fullIndex = indices[mid]
             ComparisonView(
                 newSpotName = s.newSpot.spotName,
+                newSpotPhotoUrl = s.newSpot.photoUrl,
                 existingSpotName = ctx.rankedSpots[fullIndex].spotName,
+                existingSpotPhotoUrl = ctx.rankedSpots[fullIndex].photoUrl,
                 existingRank = mid + 1,
                 totalComparisons = indices.size,
                 onPreferNew = {
@@ -295,7 +307,19 @@ private class ComparingHandler(private val s: RankState.Comparing) : RankState.H
                         ctx.setState(s.copy(low = mid + 1))
                     }
                 },
-                onCancel = { ctx.setState(RankState.Viewing) },
+                onCancel = {
+                    // If this comparison was triggered by "Save and Re-rank", restore the original spot.
+                    val original = ctx.rerankOriginalSpot
+                    if (original != null) {
+                        val idx = ctx.rerankOriginalIndex
+                        val restoreAt = (idx ?: ctx.rankedSpots.size).coerceIn(0, ctx.rankedSpots.size)
+                        val restored = ctx.rankedSpots.toMutableList().apply { add(restoreAt, original) }
+                        ctx.setRankedSpots(restored)
+                        ctx.setRerankOriginalSpot(null)
+                        ctx.setRerankOriginalIndex(null)
+                    }
+                    ctx.setState(RankState.Viewing)
+                },
             )
         }
     }
@@ -314,6 +338,8 @@ fun RankScreen(prefillSpotName: String? = null) {
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var editingSpot by remember { mutableStateOf<LocalRankedSpot?>(null) }
+    var rerankOriginalSpot by remember { mutableStateOf<LocalRankedSpot?>(null) }
+    var rerankOriginalIndex by remember { mutableStateOf<Int?>(null) }
     val scope = rememberCoroutineScope()
 
     /*
@@ -415,6 +441,9 @@ fun RankScreen(prefillSpotName: String? = null) {
 
     // Insert spot at full-list index. Assigns a unique score so list order and ranks stay correct
     fun insertAtIndex(spot: LocalRankedSpot, index: Int) {
+        // If we were in a re-rank flow, insertion finalizes it.
+        rerankOriginalSpot = null
+        rerankOriginalIndex = null
         val score = scoreForInsertionAtIndex(index)
         val spotWithScore = spot.copy(score = score)
         val updated = rankedSpots.toMutableList().apply { add(index, spotWithScore) }
@@ -497,6 +526,10 @@ fun RankScreen(prefillSpotName: String? = null) {
                 setError = { error = it },
                 editingSpot = editingSpot,
                 setEditingSpot = { editingSpot = it },
+                rerankOriginalSpot = rerankOriginalSpot,
+                setRerankOriginalSpot = { rerankOriginalSpot = it },
+                rerankOriginalIndex = rerankOriginalIndex,
+                setRerankOriginalIndex = { rerankOriginalIndex = it },
                 scope = scope,
                 saveRankings = { saveRankings(it) },
                 insertAtIndex = { spot, index -> insertAtIndex(spot, index) },
@@ -535,6 +568,37 @@ private fun EditRankDialog(
 ) {
     var notes by remember(spot) { mutableStateOf(spot.notes) }
     var selectedRating by remember(spot) { mutableStateOf(spot.rating) }
+    var photoUrl by remember(spot) { mutableStateOf(spot.photoUrl) }
+    var photoError by remember(spot) { mutableStateOf<String?>(null) }
+
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    val pickImageLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        photoError = null
+        scope.launch {
+            try {
+                val bytes = withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        input.readBytes()
+                    } ?: ByteArray(0)
+                }
+                if (bytes.isEmpty()) {
+                    photoError = "Could not read selected image."
+                    return@launch
+                }
+
+                val mime = context.contentResolver.getType(uri) ?: "image/jpeg"
+                val base64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                photoUrl = "data:$mime;base64,$base64"
+            } catch (_: Exception) {
+                photoError = "Failed to load image. Please try another one."
+            }
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -594,6 +658,53 @@ private fun EditRankDialog(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(8.dp),
                 )
+
+                Spacer(Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = { pickImageLauncher.launch("image/*") },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                    ) {
+                        Text(if (photoUrl.isBlank()) "Upload photo" else "Change photo")
+                    }
+
+                    if (photoUrl.isNotBlank()) {
+                        OutlinedButton(
+                            onClick = { photoUrl = "" },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                        ) {
+                            Text("Remove")
+                        }
+                    }
+                }
+
+                if (photoError != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = photoError!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+
+                if (photoUrl.isNotBlank()) {
+                    Spacer(Modifier.height(10.dp))
+                    PhotoPreview(
+                        photoUrl = photoUrl,
+                        contentDescription = "Preview",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(120.dp)
+                            .clip(RoundedCornerShape(8.dp)),
+                        contentScale = ContentScale.Crop,
+                    )
+                }
             }
         },
         confirmButton = {
@@ -602,6 +713,7 @@ private fun EditRankDialog(
                     val updated = spot.copy(
                         notes = notes.trim(),
                         rating = selectedRating,
+                        photoUrl = photoUrl.trim(),
                     )
                     onConfirm(updated)
                 },
@@ -677,6 +789,23 @@ private fun RankedListView(
                     modifier = Modifier.padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        PhotoPreview(
+                            photoUrl = spot.photoUrl,
+                            contentDescription = spot.spotName,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    }
+
+                    Spacer(Modifier.width(12.dp))
+
                     Row(
                         modifier = Modifier
                             .border(1.dp, accentColor.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
@@ -887,8 +1016,8 @@ private fun AddSpotForm(
 
         if (photoUrl.isNotBlank()) {
             Spacer(Modifier.height(10.dp))
-            AsyncImage(
-                model = photoUrl,
+            PhotoPreview(
+                photoUrl = photoUrl,
                 contentDescription = "Preview",
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1058,7 +1187,11 @@ private fun RatingChoiceChip(
 }
 
 @Composable
-private fun SpotChoiceCard(spotName: String, onClick: () -> Unit) {
+private fun SpotChoiceCard(
+    spotName: String,
+    photoUrl: String,
+    onClick: () -> Unit,
+) {
     Card(
         onClick = onClick,
         modifier = Modifier
@@ -1082,11 +1215,11 @@ private fun SpotChoiceCard(spotName: String, onClick: () -> Unit) {
                     .background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    Icons.Default.Image,
-                    contentDescription = null,
-                    modifier = Modifier.size(48.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                PhotoPreview(
+                    photoUrl = photoUrl,
+                    contentDescription = spotName,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
                 )
             }
             Spacer(Modifier.height(12.dp))
@@ -1103,7 +1236,9 @@ private fun SpotChoiceCard(spotName: String, onClick: () -> Unit) {
 @Composable
 private fun ComparisonView(
     newSpotName: String,
+    newSpotPhotoUrl: String,
     existingSpotName: String,
+    existingSpotPhotoUrl: String,
     existingRank: Int,
     totalComparisons: Int,
     onPreferNew: () -> Unit,
@@ -1147,7 +1282,11 @@ private fun ComparisonView(
         }
         Spacer(Modifier.height(24.dp))
 
-        SpotChoiceCard(spotName = newSpotName, onClick = onPreferNew)
+        SpotChoiceCard(
+            spotName = newSpotName,
+            photoUrl = newSpotPhotoUrl,
+            onClick = onPreferNew,
+        )
         Spacer(Modifier.height(12.dp))
         Text(
             "VS",
@@ -1156,7 +1295,11 @@ private fun ComparisonView(
             modifier = Modifier.align(Alignment.CenterHorizontally),
         )
         Spacer(Modifier.height(12.dp))
-        SpotChoiceCard(spotName = existingSpotName, onClick = onPreferExisting)
+        SpotChoiceCard(
+            spotName = existingSpotName,
+            photoUrl = existingSpotPhotoUrl,
+            onClick = onPreferExisting,
+        )
 
         Spacer(Modifier.weight(1f))
         TextButton(onClick = onCancel) {

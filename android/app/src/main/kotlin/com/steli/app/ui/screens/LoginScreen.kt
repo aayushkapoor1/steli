@@ -15,6 +15,7 @@ import com.steli.app.data.AuthManager
 import com.steli.app.data.LoginRequest
 import com.steli.app.data.steliApi
 import kotlinx.coroutines.launch
+import retrofit2.HttpException
 
 @Composable
 fun LoginScreen(
@@ -30,7 +31,22 @@ fun LoginScreen(
 
     // If already logged in (e.g. returning user), go straight to main app
     LaunchedEffect(isLoggedIn) {
-        if (isLoggedIn) onLoginSuccess()
+        if (!isLoggedIn) return@LaunchedEffect
+        // Validate the saved token before navigating into protected screens.
+        // If the backend restarted (in-memory tokens) the stored token may be stale.
+        try {
+            steliApi.getMe()
+            onLoginSuccess()
+        } catch (e: HttpException) {
+            if (e.code() == 401) {
+                AuthManager.logout()
+            } else {
+                onLoginSuccess()
+            }
+        } catch (_: Exception) {
+            // Network error: don't force logout; allow user to proceed or retry manually.
+            // Keep them on the login screen.
+        }
     }
 
     Column(

@@ -21,7 +21,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
+import com.steli.app.ui.components.PhotoPreview
 import com.steli.app.data.*
 import kotlinx.coroutines.launch
 
@@ -314,21 +314,12 @@ private fun ProfileRankedCard(ranked: RankedSpot) {
                     .background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center,
             ) {
-                if (ranked.photoUrl.isNotBlank()) {
-                    AsyncImage(
-                        model = ranked.photoUrl,
-                        contentDescription = ranked.spot.name,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                    )
-                } else {
-                    Icon(
-                        Icons.Default.Image,
-                        contentDescription = null,
-                        modifier = Modifier.size(28.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                PhotoPreview(
+                    photoUrl = ranked.photoUrl,
+                    contentDescription = ranked.spot.name,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
             }
 
             Spacer(Modifier.width(12.dp))

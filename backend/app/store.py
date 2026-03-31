@@ -334,6 +334,18 @@ class Store:
                     if s:
                         old_spot_names.add(s["name"].lower().strip())
 
+            new_spot_names = {item["spot_name"].lower().strip() for item in ranked_items}
+            removed_names = old_spot_names - new_spot_names
+            removed_spot_ids: set[int] = set()
+            if removed_names:
+                for rid in self.user_rankings.get(user_id, []):
+                    r = self.rankings.get(rid)
+                    if not r:
+                        continue
+                    s = self.spots.get(r["spot_id"])
+                    if s and s["name"].lower().strip() in removed_names:
+                        removed_spot_ids.add(s["id"])
+
             # Remove old rankings for this user
             for rid in self.user_rankings.get(user_id, []):
                 self.rankings.pop(rid, None)
@@ -381,11 +393,25 @@ class Store:
                                 "spot": {"id": spot["id"], "name": spot["name"], "category": spot.get("category", "")},
                                 "score": score,
                                 "tier": self.score_to_tier(score),
+                                "photo_url": item.get("photo_url", ""),
                             })
                             break
                     if len(self.feed_events) > 500:
                         self.feed_events = self.feed_events[-500:]
             ####### End of not in project yet ######
+
+            # Remove feed "new" events for spots this user no longer ranks (so followers don't see stale items).
+            if removed_spot_ids:
+                self.feed_events = [
+                    e
+                    for e in self.feed_events
+                    if not (
+                        e.get("user_id") == user_id
+                        and e.get("kind", "new") == "new"
+                        and isinstance(e.get("spot"), dict)
+                        and e["spot"].get("id") in removed_spot_ids
+                    )
+                ]
             self._persist()
             return self.get_user_rankings(user_id)
 
@@ -406,29 +432,48 @@ class Store:
     def ranked_count(self, user_id: int) -> int:
         return len(self.user_rankings.get(user_id, []))
 
+    def _ranking_photo_for_user_spot(self, user_id: int, spot_id: int) -> str:
+        """Current photo_url for this user's ranking of spot_id, or empty string."""
+        for rid in self.user_rankings.get(user_id, []):
+            r = self.rankings.get(rid)
+            if r and r.get("spot_id") == spot_id:
+                return (r.get("photo_url") or "").strip()
+        return ""
+
     ####### Not in project yet ######
     def _feed_events_to_items(self, events: list[dict]):
         """Convert feed event dicts to the same shape as before (id, user, spot, score, tier, created_at)."""
         out = []
-        for e in events:
-            user = self.users[e["user_id"]]
-            out.append({
-                "id": e["id"],
-                "user": {
-                    "id": user["id"],
-                    "username": user["username"],
-                    "first_name": user["first_name"],
-                    "last_name": user["last_name"],
-                },
-                "spot": e["spot"],
-                "rank": 1,
-                "score": e["score"],
-                "tier": e["tier"],
-                "notes": "",
-                "photo_url": "",
-                "created_at": e["created_at"],
-                "kind": e["kind"],
-            })
+        mutated = False
+        with self._lock:
+            for e in events:
+                if e.get("kind", "new") == "new" and not (e.get("photo_url") or "").strip():
+                    sid = e.get("spot", {}).get("id") if isinstance(e.get("spot"), dict) else None
+                    if sid is not None:
+                        photo = self._ranking_photo_for_user_spot(e["user_id"], int(sid))
+                        if photo:
+                            e["photo_url"] = photo
+                            mutated = True
+                user = self.users[e["user_id"]]
+                out.append({
+                    "id": e["id"],
+                    "user": {
+                        "id": user["id"],
+                        "username": user["username"],
+                        "first_name": user["first_name"],
+                        "last_name": user["last_name"],
+                    },
+                    "spot": e["spot"],
+                    "rank": 1,
+                    "score": e["score"],
+                    "tier": e["tier"],
+                    "notes": "",
+                    "photo_url": e.get("photo_url", ""),
+                    "created_at": e["created_at"],
+                    "kind": e["kind"],
+                })
+            if mutated:
+                self._persist()
         return out
 
     def get_feed(self, user_id: int, limit: int = 20):

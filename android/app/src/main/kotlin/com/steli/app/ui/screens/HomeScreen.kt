@@ -38,7 +38,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
+import com.steli.app.ui.components.PhotoPreview
 import com.steli.app.data.FeedItem
 import com.steli.app.data.steliApi
 import com.steli.app.ui.theme.SteliTheme
@@ -163,20 +163,12 @@ private fun FeedCard(item: FeedItem) {
                     .background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center,
             ) {
-                if (item.photoUrl.isNotBlank()) {
-                    AsyncImage(
-                        model = item.photoUrl,
-                        contentDescription = item.spot.name,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                    )
-                } else {
-                    androidx.compose.material3.Icon(
-                        imageVector = Icons.Default.Image,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                PhotoPreview(
+                    photoUrl = item.photoUrl,
+                    contentDescription = item.spot.name,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
             }
 
             Column(modifier = Modifier.weight(1f)) {
