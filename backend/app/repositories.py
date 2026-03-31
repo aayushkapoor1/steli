@@ -20,6 +20,15 @@ class UserRepository(ABC):
     @abstractmethod
     def search_users(self, query: str) -> list[dict]: ...
 
+    @abstractmethod
+    def update_profile_photo(self, user_id: int, photo_url: str) -> dict | None: ...
+
+    @abstractmethod
+    def update_privacy(self, user_id: int, is_public: bool) -> dict | None: ...
+
+    @abstractmethod
+    def is_profile_visible(self, target_id: int, viewer_id: int | None) -> bool: ...
+
 
 class SessionRepository(ABC):
     @abstractmethod
@@ -34,13 +43,28 @@ class SessionRepository(ABC):
 
 class SocialRepository(ABC):
     @abstractmethod
-    def follow(self, follower_id: int, following_id: int) -> bool: ...
+    def follow(self, follower_id: int, following_id: int) -> str: ...
 
     @abstractmethod
     def unfollow(self, follower_id: int, following_id: int) -> None: ...
 
     @abstractmethod
     def is_following(self, follower_id: int, following_id: int) -> bool: ...
+
+    @abstractmethod
+    def follow_status(self, viewer_id: int, target_id: int) -> str: ...
+
+    @abstractmethod
+    def get_pending_follow_requests(self, user_id: int) -> list[dict]: ...
+
+    @abstractmethod
+    def pending_requests_count(self, user_id: int) -> int: ...
+
+    @abstractmethod
+    def approve_follow_request(self, target_id: int, requester_id: int) -> bool: ...
+
+    @abstractmethod
+    def deny_follow_request(self, target_id: int, requester_id: int) -> bool: ...
 
     @abstractmethod
     def get_followers(self, user_id: int) -> list[dict]: ...
@@ -80,13 +104,25 @@ class RankingRepository(ABC):
     def get_feed(self, user_id: int, limit: int = 20) -> list[dict]: ...
 
     @abstractmethod
-    def get_recent_rankings(self, limit: int = 20) -> list[dict]: ...
+    def get_recent_rankings(self, limit: int = 20, viewer_id: int | None = None) -> list[dict]: ...
 
     @abstractmethod
     def get_matchup(self, user_id: int) -> dict | None: ...
 
     @abstractmethod
     def record_pairwise_result(self, user_id: int, winner_spot_name: str, loser_spot_name: str) -> dict: ...
+
+    @abstractmethod
+    def toggle_like(self, feed_event_id: int, user_id: int) -> bool: ...
+
+    @abstractmethod
+    def unlike(self, feed_event_id: int, user_id: int) -> None: ...
+
+    @abstractmethod
+    def add_comment(self, feed_event_id: int, user_id: int, text: str) -> dict: ...
+
+    @abstractmethod
+    def get_comments(self, feed_event_id: int) -> list[dict]: ...
 
 
 class UserRepositoryImpl(UserRepository):
@@ -107,6 +143,15 @@ class UserRepositoryImpl(UserRepository):
             return list(self._store.users.values())
         return self._store.search_users(query)
 
+    def update_profile_photo(self, user_id: int, photo_url: str) -> dict | None:
+        return self._store.update_profile_photo(user_id, photo_url)
+
+    def update_privacy(self, user_id: int, is_public: bool) -> dict | None:
+        return self._store.update_privacy(user_id, is_public)
+
+    def is_profile_visible(self, target_id: int, viewer_id: int | None) -> bool:
+        return self._store.is_profile_visible(target_id, viewer_id)
+
 
 class SessionRepositoryImpl(SessionRepository):
     def __init__(self, store: Store):
@@ -126,7 +171,7 @@ class SocialRepositoryImpl(SocialRepository):
     def __init__(self, store: Store):
         self._store = store
 
-    def follow(self, follower_id: int, following_id: int) -> bool:
+    def follow(self, follower_id: int, following_id: int) -> str:
         return self._store.follow(follower_id, following_id)
 
     def unfollow(self, follower_id: int, following_id: int) -> None:
@@ -134,6 +179,21 @@ class SocialRepositoryImpl(SocialRepository):
 
     def is_following(self, follower_id: int, following_id: int) -> bool:
         return self._store.is_following(follower_id, following_id)
+
+    def follow_status(self, viewer_id: int, target_id: int) -> str:
+        return self._store.follow_status(viewer_id, target_id)
+
+    def get_pending_follow_requests(self, user_id: int) -> list[dict]:
+        return self._store.get_pending_follow_requests(user_id)
+
+    def pending_requests_count(self, user_id: int) -> int:
+        return self._store.pending_requests_count(user_id)
+
+    def approve_follow_request(self, target_id: int, requester_id: int) -> bool:
+        return self._store.approve_follow_request(target_id, requester_id)
+
+    def deny_follow_request(self, target_id: int, requester_id: int) -> bool:
+        return self._store.deny_follow_request(target_id, requester_id)
 
     def get_followers(self, user_id: int) -> list[dict]:
         return self._store.get_followers(user_id)
@@ -178,11 +238,25 @@ class RankingRepositoryImpl(RankingRepository):
     def get_feed(self, user_id: int, limit: int = 20) -> list[dict]:
         return self._store.get_feed(user_id, limit=limit)
 
-    def get_recent_rankings(self, limit: int = 20) -> list[dict]:
-        return self._store.get_recent_rankings(limit=limit)
+    def get_recent_rankings(self, limit: int = 20, viewer_id: int | None = None) -> list[dict]:
+        return self._store.get_recent_rankings(limit=limit, viewer_id=viewer_id)
 
     def get_matchup(self, user_id: int) -> dict | None:
         return self._store.get_matchup(user_id)
 
     def record_pairwise_result(self, user_id: int, winner_spot_name: str, loser_spot_name: str) -> dict:
         return self._store.record_pairwise_result(user_id, winner_spot_name, loser_spot_name)
+
+    def toggle_like(self, feed_event_id: int, user_id: int) -> bool:
+        return self._store.toggle_like(feed_event_id, user_id)
+
+    def unlike(self, feed_event_id: int, user_id: int) -> None:
+        return self._store.unlike(feed_event_id, user_id)
+
+    def add_comment(self, feed_event_id: int, user_id: int, text: str) -> dict:
+        comment = self._store.add_comment(feed_event_id, user_id, text)
+        return self._store._comment_to_response(comment)
+
+    def get_comments(self, feed_event_id: int) -> list[dict]:
+        comments = self._store.get_comments(feed_event_id)
+        return [self._store._comment_to_response(c) for c in comments]

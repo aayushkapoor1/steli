@@ -61,6 +61,9 @@ def get_user_rankings(username: str, user=Depends(get_optional_user)):
     target = facade.get_user_by_username(username)
     if target is None:
         raise HTTPException(status_code=404, detail="User not found")
+    viewer_id = user["id"] if user else None
+    if not facade.is_profile_visible(target["id"], viewer_id):
+        raise HTTPException(status_code=403, detail="This profile is private")
     return facade.get_user_rankings(target["id"])
 
 
@@ -72,5 +75,44 @@ def get_feed(limit: int = 20, user=Depends(get_current_user)):
 
 @router.get("/recent")
 def get_recent_rankings(limit: int = 20, user=Depends(get_optional_user)):
-    """Global recent feed, ordered by recency."""
-    return facade.get_recent_rankings(limit=limit)
+    """Global recent feed: only shows items from public profiles or profiles the viewer follows."""
+    viewer_id = user["id"] if user else None
+    items = facade.get_recent_rankings(limit=limit * 2, viewer_id=viewer_id)
+    visible = [
+        item for item in items
+        if facade.is_profile_visible(item["user"]["id"], viewer_id)
+    ]
+    return visible[:limit]
+
+
+@router.post("/feed/{event_id}/like")
+def toggle_like(event_id: int, user=Depends(get_current_user)):
+    """Toggle like on a feed event."""
+    liked = facade.toggle_like(event_id, user["id"])
+    return {"liked": liked}
+
+
+@router.delete("/feed/{event_id}/like")
+def unlike(event_id: int, user=Depends(get_current_user)):
+    """Remove like from a feed event."""
+    facade.unlike(event_id, user["id"])
+    return {"liked": False}
+
+
+class AddCommentRequest(BaseModel):
+    text: str
+
+
+@router.get("/feed/{event_id}/comments")
+def get_comments(event_id: int, user=Depends(get_current_user)):
+    """Get all comments for a feed event."""
+    return facade.get_comments(event_id)
+
+
+@router.post("/feed/{event_id}/comments")
+def add_comment(event_id: int, req: AddCommentRequest, user=Depends(get_current_user)):
+    """Add a comment to a feed event."""
+    text = req.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Comment text is required")
+    return facade.add_comment(event_id, user["id"], text)

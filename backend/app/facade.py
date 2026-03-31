@@ -38,6 +38,15 @@ class SteliFacade:
     def search_users(self, query: str):
         return self._users.search_users(query)
 
+    def update_profile_photo(self, user_id: int, photo_url: str):
+        return self._users.update_profile_photo(user_id, photo_url)
+
+    def update_privacy(self, user_id: int, is_public: bool):
+        return self._users.update_privacy(user_id, is_public)
+
+    def is_profile_visible(self, target_id: int, viewer_id: int | None) -> bool:
+        return self._users.is_profile_visible(target_id, viewer_id)
+
     # Sessions
     def create_token(self, user_id: int) -> str:
         return self._sessions.create_token(user_id)
@@ -49,7 +58,7 @@ class SteliFacade:
         return self._sessions.delete_token(token)
 
     # Social
-    def follow(self, follower_id: int, following_id: int) -> bool:
+    def follow(self, follower_id: int, following_id: int) -> str:
         return self._social.follow(follower_id, following_id)
 
     def unfollow(self, follower_id: int, following_id: int):
@@ -57,6 +66,21 @@ class SteliFacade:
 
     def is_following(self, follower_id: int, following_id: int) -> bool:
         return self._social.is_following(follower_id, following_id)
+
+    def follow_status(self, viewer_id: int, target_id: int) -> str:
+        return self._social.follow_status(viewer_id, target_id)
+
+    def get_pending_follow_requests(self, user_id: int):
+        return self._social.get_pending_follow_requests(user_id)
+
+    def pending_requests_count(self, user_id: int) -> int:
+        return self._social.pending_requests_count(user_id)
+
+    def approve_follow_request(self, target_id: int, requester_id: int) -> bool:
+        return self._social.approve_follow_request(target_id, requester_id)
+
+    def deny_follow_request(self, target_id: int, requester_id: int) -> bool:
+        return self._social.deny_follow_request(target_id, requester_id)
 
     def get_followers(self, user_id: int):
         return self._social.get_followers(user_id)
@@ -93,14 +117,27 @@ class SteliFacade:
     def get_feed(self, user_id: int, limit: int = 20):
         return self._rankings.get_feed(user_id, limit=limit)
 
-    def get_recent_rankings(self, limit: int = 20):
-        return self._rankings.get_recent_rankings(limit=limit)
+    def get_recent_rankings(self, limit: int = 20, viewer_id: int | None = None):
+        return self._rankings.get_recent_rankings(limit=limit, viewer_id=viewer_id)
 
     def get_matchup(self, user_id: int):
         return self._rankings.get_matchup(user_id)
 
     def record_pairwise_result(self, user_id: int, winner_spot_name: str, loser_spot_name: str):
         return self._rankings.record_pairwise_result(user_id, winner_spot_name, loser_spot_name)
+
+    def toggle_like(self, feed_event_id: int, user_id: int) -> bool:
+        return self._rankings.toggle_like(feed_event_id, user_id)
+
+    def unlike(self, feed_event_id: int, user_id: int):
+        return self._rankings.unlike(feed_event_id, user_id)
+
+    def add_comment(self, feed_event_id: int, user_id: int, text: str) -> dict:
+        comment = self._rankings.add_comment(feed_event_id, user_id, text)
+        return comment
+
+    def get_comments(self, feed_event_id: int) -> list[dict]:
+        return self._rankings.get_comments(feed_event_id)
 
 
 facade = SteliFacade()
